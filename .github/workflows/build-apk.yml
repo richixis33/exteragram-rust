@@ -1,4 +1,4 @@
-name: Build ExteraGram Rust APK
+name: Build ExteraLight APK
 
 on:
   push:
@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   build:
-    name: Build Android APK with TDLib and Rust Core
+    name: Build ExteraLight Android APK
     runs-on: ubuntu-latest
 
     steps:
@@ -23,29 +23,6 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
           cache: 'gradle'
-
-      - name: Setup Android NDK
-        uses: nttld/setup-ndk@v1
-        id: setup-ndk
-        with:
-          ndk-version: r26b
-          add-to-path: true
-
-      - name: Set up Rust Toolchain
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: aarch64-linux-android, armv7-linux-androideabi, x86_64-linux-android
-
-      - name: Install cargo-ndk
-        run: cargo install cargo-ndk
-
-      - name: Compile Rust Core (libextera_core.so)
-        run: |
-          mkdir -p app/src/main/jniLibs
-          cd extera-core
-          cargo ndk -t arm64-v8a -t armeabi-v7a -t x86_64 -o ../app/src/main/jniLibs build --release
-          cd ..
-          ls -R app/src/main/jniLibs
 
       - name: Fetch TDLib Android AAR
         run: |
@@ -67,30 +44,34 @@ jobs:
       - name: Prepare APK Output
         run: |
           mkdir -p release_output
-          find app/build/outputs/apk -name "*.apk" -exec cp {} release_output/exteragram-rust-v1.1.0.apk \;
+          find app/build/outputs/apk -name "*.apk" -exec cp {} release_output/ExteraLight-v1.0.0.apk \;
           ls -lh release_output/
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: exteragram-rust-v1.1.0.apk
-          path: release_output/exteragram-rust-v1.1.0.apk
+          name: ExteraLight-v1.0.0.apk
+          path: release_output/ExteraLight-v1.0.0.apk
 
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         if: startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
         with:
-          tag_name: v1.1.0
-          name: "exteraGram Rust & TDLib v1.1.0 (Full Telegram Client)"
+          tag_name: v1.2.0
+          name: "ExteraLight v1.0.0 (Material You Telegram)"
           body: |
-            ### 🚀 Полноценный клиент Telegram на Rust + TDLib
+            ### ⚡ ExteraLight Mobile (No Bloat, Pure Material You)
             
-            - **Реальный Telegram**: полноценная авторизация по номеру телефона / коду / 2FA паролю.
-            - **Ядро на Rust**: `libextera_core.so` (перехватчик Ghost-режима, блокировка отчетов о прочтении, анти-удаление сообщений).
-            - **Интерфейс**: Jetpack Compose + Material Design 3 + Liquid Glass (матовое стекло, размытие, блики).
-            - **Настройки extera**: полный контроль Ghost Mode, слайдеры стекла, темы Monet, скругление пузырей.
+            - **Отказ от лишнего**: Никакого визуального мусора, лагающих шейдеров размытия и гигантского веса.
+            - **Material Design 3 (Material You)**: Чистая динамическая палитра Monet из обоев смартфона, аккуратные карточки и нативная типографика.
+            - **Плагины Extera**:
+              - 👻 **Ghost Mode**: скрытие прочтения и статуса набора текста.
+              - 🛡️ **Anti-Delete**: сохранение удаленных сообщений.
+              - 🏷️ **ID Inspector & Datacenter Info**: отображение Telegram ID и DC серверов (DC1–DC5) в профилях и сообщениях.
+            - **🥚 Пасхалки**:
+              - Нажмите 5 раз на версию в настройках, чтобы активировать **ExteraLight God Mode**!
             
-            📲 **Установка:** Скачайте `exteragram-rust-v1.1.0.apk` ниже и установите на Android.
-          files: release_output/exteragram-rust-v1.1.0.apk
+            📲 **Установка:** Скачайте `ExteraLight-v1.0.0.apk` ниже.
+          files: release_output/ExteraLight-v1.0.0.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

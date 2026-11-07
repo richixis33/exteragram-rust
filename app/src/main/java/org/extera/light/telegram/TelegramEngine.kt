@@ -1,16 +1,14 @@
-package org.exteragram.rust.telegram
+package org.extera.light.telegram
 
 import android.content.Context
 import android.os.Build
 import android.util.Log
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
+import androidx.compose.ui.graphics.Color
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import org.drinkless.tdlib.Client
 import org.drinkless.tdlib.TdApi
-import org.exteragram.rust.core.ExteraBridge
 import java.io.File
 
 sealed class AuthState {
@@ -39,16 +37,32 @@ data class ExteraChat(
     val lastMessageText: String,
     val date: Int,
     val unreadCount: Int,
-    val isOnline: Boolean = false
+    val isOnline: Boolean = false,
+    val dcNumber: Int = 4
 )
 
-object TelegramManager : Client.ResultHandler {
-    private const val TAG = "TelegramManager"
+data class ExteraSettings(
+    var ghostHideRead: Boolean = true,
+    var ghostHideTyping: Boolean = true,
+    var ghostHideOnline: Boolean = false,
+    var antiDeleteEnabled: Boolean = true,
+    var showIds: Boolean = true,
+    var showExactEditTime: Boolean = true,
+    var forwardWithoutQuote: Boolean = true,
+    var bubbleCornerRadius: Float = 16f,
+    var customSeedColor: Color? = null,
+    var spoofDevice: String = "ExteraLight Phone",
+    var godModeUnlocked: Boolean = false
+)
+
+object TelegramEngine : Client.ResultHandler {
+    private const val TAG = "ExteraLightEngine"
     private const val API_ID = 94575
     private const val API_HASH = "a3406de8d171bb422bb6ddf3bbd800e2"
 
     private var client: Client? = null
-    private val scope = CoroutineScope(Dispatchers.IO)
+
+    val settings = ExteraSettings()
 
     private val _authState = MutableStateFlow<AuthState>(AuthState.Initial)
     val authState: StateFlow<AuthState> = _authState.asStateFlow()
@@ -61,7 +75,6 @@ object TelegramManager : Client.ResultHandler {
 
     private val userCache = mutableMapOf<Long, TdApi.User>()
     private val rawChatMap = mutableMapOf<Long, TdApi.Chat>()
-
     private var currentPhoneNumber: String = ""
 
     fun initialize(context: Context) {
@@ -74,7 +87,7 @@ object TelegramManager : Client.ResultHandler {
             handleUpdate(update, tdlibDir, filesDir)
         }, null, null)
 
-        Log.i(TAG, "TDLib Client instantiated successfully.")
+        Log.i(TAG, "ExteraLight Engine initialized with TDLib.")
     }
 
     private fun handleUpdate(update: TdApi.Object, tdlibDir: File, filesDir: File) {
@@ -83,8 +96,7 @@ object TelegramManager : Client.ResultHandler {
                 handleAuthState(update.authorizationState, tdlibDir, filesDir)
             }
             is TdApi.UpdateNewChat -> {
-                val chat = update.chat
-                rawChatMap[chat.id] = chat
+                rawChatMap[update.chat.id] = update.chat
                 updateChatList()
             }
             is TdApi.UpdateChatLastMessage -> {
@@ -97,40 +109,25 @@ object TelegramManager : Client.ResultHandler {
             is TdApi.UpdateNewMessage -> {
                 val msg = update.message
                 val text = extractMessageText(msg.content)
-                val isOutgoing = msg.isOutgoing
                 val senderId = when (val sender = msg.senderId) {
                     is TdApi.MessageSenderUser -> sender.userId
                     else -> 0L
                 }
 
-                // Pass to Rust Core for Anti-Delete and Ghost indexing
-                ExteraBridge.recordMessage(
-                    chatId = msg.chatId,
-                    msgId = msg.id,
-                    senderId = senderId,
-                    senderName = "User $senderId",
-                    text = text,
-                    isOutgoing = isOutgoing
-                )
-
                 addMessageToChat(msg.chatId, ExteraChatMessage(
                     id = msg.id,
                     senderId = senderId,
-                    senderName = "User $senderId",
+                    senderName = userCache[senderId]?.firstName ?: "Пользователь",
                     text = text,
                     date = msg.date,
-                    isOutgoing = isOutgoing,
+                    isOutgoing = msg.isOutgoing,
                     editDate = msg.editDate
                 ))
             }
             is TdApi.UpdateDeleteMessages -> {
-                if (update.isPermanent) {
-                    // Anti-Delete Interception via Rust: Keep messages locally!
-                    val chatId = update.chatId
-                    update.messageIds.forEach { msgId ->
-                        ExteraBridge.markMessageDeleted(chatId, msgId)
-                    }
-                    markMessagesDeletedInState(chatId, update.messageIds.toList())
+                if (settings.antiDeleteEnabled && update.isPermanent) {
+                    // Extera Plugin: Anti-Delete message retention
+                    markMessagesDeletedInState(update.chatId, update.messageIds.toList())
                 }
             }
             is TdApi.UpdateUser -> {
@@ -149,9 +146,9 @@ object TelegramManager : Client.ResultHandler {
                     apiId = API_ID
                     apiHash = API_HASH
                     systemLanguageCode = "ru"
-                    deviceModel = "exteraGram Rust Phone"
+                    deviceModel = settings.spoofDevice
                     systemVersion = "Android ${Build.VERSION.RELEASE}"
-                    applicationVersion = "1.1.0-extera"
+                    applicationVersion = "1.0.0-ExteraLight"
                 }
                 client?.send(params, this)
             }
@@ -170,7 +167,6 @@ object TelegramManager : Client.ResultHandler {
                         _authState.value = AuthState.LoggedIn(meObj)
                     }
                 }
-                // Load actual chats from Telegram cloud
                 client?.send(TdApi.LoadChats(null, 50), this)
             }
             is TdApi.AuthorizationStateLoggingOut, is TdApi.AuthorizationStateClosed -> {
@@ -217,12 +213,11 @@ object TelegramManager : Client.ResultHandler {
             }
         }
 
-        // Ghost Mode Interception on Opening Chat:
-        // If hide_read_receipts is enabled, do NOT send TdApi.OpenChat or TdApi.ViewMessages!
-        if (!ExteraBridge.shouldBlockReadReceipt(chatId, 0)) {
+        // Ghost Mode Interception: Do not send openChat / viewMessages if hidden
+        if (!settings.ghostHideRead) {
             client?.send(TdApi.OpenChat(chatId), null)
         } else {
-            Log.d(TAG, "[Ghost Mode] Blocked openChat / viewMessages for chatId $chatId")
+            Log.d(TAG, "[Ghost Mode] openChat suppressed for $chatId")
         }
     }
 
@@ -232,19 +227,18 @@ object TelegramManager : Client.ResultHandler {
             null,
             false
         )
-        // In TDLib 1.8.69: SendMessage(chatId, messageTopic, replyTo, options, replyMarkup, content)
         client?.send(TdApi.SendMessage(chatId, null, null, null, null, content), this)
     }
 
     fun sendTyping(chatId: Long) {
-        // Ghost Mode Interception on Typing:
-        if (!ExteraBridge.shouldBlockTyping(chatId, "typing")) {
-            // In TDLib 1.8.69: SendChatAction(chatId, messageTopic, businessConnectionId, action)
+        // Ghost Mode: Suppress typing
+        if (!settings.ghostHideTyping) {
             client?.send(TdApi.SendChatAction(chatId, null, null, TdApi.ChatActionTyping()), null)
-        } else {
-            Log.d(TAG, "[Ghost Mode] Suppressed typing indicator for chatId $chatId")
         }
     }
+
+    fun getUser(userId: Long): TdApi.User? = userCache[userId]
+    fun getChat(chatId: Long): TdApi.Chat? = rawChatMap[chatId]
 
     private fun updateChatList() {
         val list = rawChatMap.values.map { chat ->
@@ -253,7 +247,8 @@ object TelegramManager : Client.ResultHandler {
                 title = chat.title,
                 lastMessageText = extractMessageText(chat.lastMessage?.content),
                 date = chat.lastMessage?.date ?: 0,
-                unreadCount = chat.unreadCount
+                unreadCount = chat.unreadCount,
+                dcNumber = ((chat.id.ushr(32)) % 5 + 1).toInt().coerceIn(1, 5)
             )
         }.sortedByDescending { it.date }
         _chats.value = list
@@ -275,11 +270,11 @@ object TelegramManager : Client.ResultHandler {
     private fun extractMessageText(content: TdApi.MessageContent?): String {
         return when (content) {
             is TdApi.MessageText -> content.text.text
-            is TdApi.MessagePhoto -> content.caption?.text?.ifEmpty { "📷 Фотография" } ?: "📷 Фотография"
-            is TdApi.MessageVideo -> content.caption?.text?.ifEmpty { "🎥 Видео" } ?: "🎥 Видео"
-            is TdApi.MessageVoiceNote -> "🎙️ Голосовое сообщение"
+            is TdApi.MessagePhoto -> content.caption?.text?.ifEmpty { "Фотография" } ?: "Фотография"
+            is TdApi.MessageVideo -> content.caption?.text?.ifEmpty { "Видео" } ?: "Видео"
+            is TdApi.MessageVoiceNote -> "Голосовое сообщение"
             is TdApi.MessageSticker -> "Стикер ${content.sticker.emoji}"
-            is TdApi.MessageDocument -> "📄 ${content.document.fileName}"
+            is TdApi.MessageDocument -> "Файл: ${content.document.fileName}"
             else -> "Сообщение"
         }
     }

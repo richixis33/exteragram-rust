@@ -5,17 +5,16 @@ plugins {
 }
 
 android {
-    namespace = "org.exteragram.rust"
+    namespace = "org.extera.light"
     compileSdk = 34
 
     defaultConfig {
-        applicationId = "org.exteragram.rust"
+        applicationId = "org.extera.light"
         minSdk = 26
         targetSdk = 34
-        versionCode = 10002
-        versionName = "1.1.0-extera-tdlib-rust"
+        versionCode = 10003
+        versionName = "1.0.0-ExteraLight"
 
-        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
             useSupportLibrary = true
         }
@@ -53,19 +52,12 @@ android {
         compose = true
     }
 
-    sourceSets {
-        getByName("main") {
-            jniLibs.srcDir("src/main/jniLibs")
-        }
-    }
-
     packaging {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
         jniLibs {
             pickFirsts += "lib/**/libtdjni.so"
-            pickFirsts += "lib/**/libextera_core.so"
         }
     }
 }

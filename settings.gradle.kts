@@ -19,5 +19,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "exteragram-rust"
+rootProject.name = "extera-light"
 include(":app")

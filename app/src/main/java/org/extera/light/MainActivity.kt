@@ -1,4 +1,4 @@
-package org.exteragram.rust
+package org.extera.light
 
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -11,17 +11,15 @@ import androidx.compose.material3.Surface
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import org.exteragram.rust.telegram.AuthState
-import org.exteragram.rust.telegram.TelegramManager
-import org.exteragram.rust.ui.screens.AuthScreen
-import org.exteragram.rust.ui.screens.ChatListScreen
-import org.exteragram.rust.ui.screens.ChatScreen
-import org.exteragram.rust.ui.screens.SettingsScreen
-import org.exteragram.rust.ui.theme.ExteraGramTheme
+import org.extera.light.telegram.AuthState
+import org.extera.light.telegram.TelegramEngine
+import org.extera.light.ui.screens.*
+import org.extera.light.ui.theme.ExteraLightTheme
 
 sealed class Screen {
     object ChatList : Screen()
     data class Chat(val chatId: Long) : Screen()
+    data class Profile(val chatId: Long) : Screen()
     object Settings : Screen()
 }
 
@@ -30,15 +28,14 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
-        // Start TDLib & Rust Core Service
-        TelegramManager.initialize(applicationContext)
+        TelegramEngine.initialize(applicationContext)
 
         setContent {
             var currentScreen by remember { mutableStateOf<Screen>(Screen.ChatList) }
             var customAccent by remember { mutableStateOf<Color?>(null) }
-            val authState by TelegramManager.authState.collectAsState()
+            val authState by TelegramEngine.authState.collectAsState()
 
-            ExteraGramTheme(customAccentColor = customAccent) {
+            ExteraLightTheme(customSeedColor = customAccent) {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
@@ -47,7 +44,7 @@ class MainActivity : ComponentActivity() {
                         is AuthState.LoggedIn -> {
                             AnimatedContent(
                                 targetState = currentScreen,
-                                label = "MainNavigation"
+                                label = "ScreenNavigation"
                             ) { target ->
                                 when (target) {
                                     is Screen.ChatList -> {
@@ -59,7 +56,14 @@ class MainActivity : ComponentActivity() {
                                     is Screen.Chat -> {
                                         ChatScreen(
                                             chatId = target.chatId,
-                                            onBackClick = { currentScreen = Screen.ChatList }
+                                            onBackClick = { currentScreen = Screen.ChatList },
+                                            onProfileClick = { currentScreen = Screen.Profile(target.chatId) }
+                                        )
+                                    }
+                                    is Screen.Profile -> {
+                                        ProfileScreen(
+                                            chatId = target.chatId,
+                                            onBackClick = { currentScreen = Screen.Chat(target.chatId) }
                                         )
                                     }
                                     is Screen.Settings -> {
