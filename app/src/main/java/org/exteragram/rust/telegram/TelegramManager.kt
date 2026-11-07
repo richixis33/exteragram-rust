@@ -8,7 +8,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.launch
 import org.drinkless.tdlib.Client
 import org.drinkless.tdlib.TdApi
 import org.exteragram.rust.core.ExteraBridge
@@ -152,13 +151,9 @@ object TelegramManager : Client.ResultHandler {
                     systemLanguageCode = "ru"
                     deviceModel = "exteraGram Rust Phone"
                     systemVersion = "Android ${Build.VERSION.RELEASE}"
-                    applicationVersion = "1.0.0-extera"
-                    enableStorageOptimizer = true
+                    applicationVersion = "1.1.0-extera"
                 }
                 client?.send(params, this)
-            }
-            is TdApi.AuthorizationStateWaitEncryptionKey -> {
-                client?.send(TdApi.CheckDatabaseEncryptionKey(), this)
             }
             is TdApi.AuthorizationStateWaitPhoneNumber -> {
                 _authState.value = AuthState.WaitPhoneNumber
@@ -237,13 +232,15 @@ object TelegramManager : Client.ResultHandler {
             null,
             false
         )
-        client?.send(TdApi.SendMessage(chatId, 0, null, null, null, content), this)
+        // In TDLib 1.8.69: SendMessage(chatId, messageTopic, replyTo, options, replyMarkup, content)
+        client?.send(TdApi.SendMessage(chatId, null, null, null, null, content), this)
     }
 
     fun sendTyping(chatId: Long) {
         // Ghost Mode Interception on Typing:
         if (!ExteraBridge.shouldBlockTyping(chatId, "typing")) {
-            client?.send(TdApi.SendChatAction(chatId, 0, TdApi.ChatActionTyping()), null)
+            // In TDLib 1.8.69: SendChatAction(chatId, messageTopic, businessConnectionId, action)
+            client?.send(TdApi.SendChatAction(chatId, null, null, TdApi.ChatActionTyping()), null)
         } else {
             Log.d(TAG, "[Ghost Mode] Suppressed typing indicator for chatId $chatId")
         }
