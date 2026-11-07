@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   build:
-    name: Build Android APK with Rust Core
+    name: Build Android APK with TDLib and Rust Core
     runs-on: ubuntu-latest
 
     steps:
@@ -47,6 +47,15 @@ jobs:
           cd ..
           ls -R app/src/main/jniLibs
 
+      - name: Fetch TDLib Android AAR
+        run: |
+          mkdir -p app/libs
+          if [ ! -f "app/libs/tdlib.aar" ]; then
+            echo "Downloading prebuilt TDLib 1.8 AAR..."
+            curl -sSL "https://github.com/FaiBah/TDLibAndroidPrebuilt/releases/download/v1.8.69-4c6377a-Java/tdlib.aar" -o app/libs/tdlib.aar
+          fi
+          ls -lh app/libs/
+
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v3
 
@@ -58,29 +67,30 @@ jobs:
       - name: Prepare APK Output
         run: |
           mkdir -p release_output
-          find app/build/outputs/apk -name "*.apk" -exec cp {} release_output/exteragram-rust-v1.0.0.apk \;
+          find app/build/outputs/apk -name "*.apk" -exec cp {} release_output/exteragram-rust-v1.1.0.apk \;
           ls -lh release_output/
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: exteragram-rust-v1.0.0.apk
-          path: release_output/exteragram-rust-v1.0.0.apk
+          name: exteragram-rust-v1.1.0.apk
+          path: release_output/exteragram-rust-v1.1.0.apk
 
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         if: startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
         with:
-          tag_name: v1.0.0
-          name: "exteraGram Rust v1.0.0 (Release)"
+          tag_name: v1.1.0
+          name: "exteraGram Rust & TDLib v1.1.0 (Full Telegram Client)"
           body: |
-            ### 🚀 exteraGram Rust Mobile Client
+            ### 🚀 Полноценный клиент Telegram на Rust + TDLib
             
-            - **Ядро на Rust**: `libextera_core.so` (MTProto перехватчик, Ghost Mode, Anti-Delete буфер).
-            - **Интерфейс**: Jetpack Compose + Material Design 3 + Liquid Glass (шейдеры жидкого стекла с размытием).
-            - **Кастомизация**: Полный контроль над Ghost Mode, радиусом размытия стекла, палитрой Material You (Monet) и скруглениями пузырей.
+            - **Реальный Telegram**: полноценная авторизация по номеру телефона / коду / 2FA паролю.
+            - **Ядро на Rust**: `libextera_core.so` (перехватчик Ghost-режима, блокировка отчетов о прочтении, анти-удаление сообщений).
+            - **Интерфейс**: Jetpack Compose + Material Design 3 + Liquid Glass (матовое стекло, размытие, блики).
+            - **Настройки extera**: полный контроль Ghost Mode, слайдеры стекла, темы Monet, скругление пузырей.
             
-            📲 **Установка:** Скачайте `exteragram-rust-v1.0.0.apk` ниже и установите на Android.
-          files: release_output/exteragram-rust-v1.0.0.apk
+            📲 **Установка:** Скачайте `exteragram-rust-v1.1.0.apk` ниже и установите на Android.
+          files: release_output/exteragram-rust-v1.1.0.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

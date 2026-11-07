@@ -14,6 +14,8 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -23,26 +25,12 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import org.exteragram.rust.core.ExteraBridge
+import org.exteragram.rust.telegram.ExteraChat
+import org.exteragram.rust.telegram.TelegramManager
 import org.exteragram.rust.ui.components.LiquidTopBar
 import org.exteragram.rust.ui.theme.liquidGlass
-
-data class DialogItem(
-    val id: Long,
-    val title: String,
-    val lastMessage: String,
-    val time: String,
-    val unreadCount: Int = 0,
-    val isOnline: Boolean = false,
-    val avatarColor: Color = Color(0xFF007AFF)
-)
-
-val sampleDialogs = listOf(
-    DialogItem(1001, "Павел Дуров", "Новый билд клиента на Rust летает!", "01:24", unreadCount = 1, isOnline = true, avatarColor = Color(0xFF007AFF)),
-    DialogItem(1002, "exteraGram Community", "Тестируем Liquid Glass и Ghost-режим на смартфонах", "00:58", unreadCount = 14, avatarColor = Color(0xFF9C27B0)),
-    DialogItem(1003, "Rust Dev Group", "cargo-ndk успешно собрал aarch64 .so", "Вчера", avatarColor = Color(0xFF00C853)),
-    DialogItem(1004, "Избранное (Cloud)", "exteragram-rust-v1.0.apk", "Вчера", avatarColor = Color(0xFFFF6D00)),
-    DialogItem(1005, "Мария С.", "Встретимся завтра в кафе?", "Пт", unreadCount = 0, isOnline = true, avatarColor = Color(0xFFE91E63))
-)
+import java.text.SimpleDateFormat
+import java.util.*
 
 @Composable
 fun ChatListScreen(
@@ -51,6 +39,7 @@ fun ChatListScreen(
 ) {
     val ghost = ExteraBridge.state.ghost
     val isGhostActive = ghost.hideReadReceipts || ghost.hideTypingStatus || ghost.hideOnlineStatus
+    val chats by TelegramManager.chats.collectAsState()
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -84,7 +73,7 @@ fun ChatListScreen(
                 }
             )
 
-            // Ghost Mode Banner (if active)
+            // Ghost Mode Banner
             if (isGhostActive) {
                 Box(
                     modifier = Modifier
@@ -115,13 +104,32 @@ fun ChatListScreen(
                 }
             }
 
-            // Chat List
-            LazyColumn(
-                modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(top = 4.dp, bottom = 80.dp)
-            ) {
-                items(sampleDialogs) { dialog ->
-                    ChatItemRow(dialog = dialog, onClick = { onChatClick(dialog.id) })
+            // Real Telegram Chat List from TDLib
+            if (chats.isEmpty()) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(24.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Text(
+                            text = "Синхронизация диалогов с серверами Telegram...",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                        )
+                    }
+                }
+            } else {
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(top = 4.dp, bottom = 80.dp)
+                ) {
+                    items(chats) { chat ->
+                        RealChatItemRow(chat = chat, onClick = { onChatClick(chat.id) })
+                    }
                 }
             }
         }
@@ -129,7 +137,12 @@ fun ChatListScreen(
 }
 
 @Composable
-fun ChatItemRow(dialog: DialogItem, onClick: () -> Unit) {
+fun RealChatItemRow(chat: ExteraChat, onClick: () -> Unit) {
+    val timeFormatted = if (chat.date > 0) {
+        val sdf = SimpleDateFormat("HH:mm", Locale.getDefault())
+        sdf.format(Date(chat.date * 1000L))
+    } else ""
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -137,30 +150,20 @@ fun ChatItemRow(dialog: DialogItem, onClick: () -> Unit) {
             .padding(horizontal = 16.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        // Avatar
+        // Avatar with initials
         Box(
             modifier = Modifier
                 .size(54.dp)
                 .clip(CircleShape)
-                .background(dialog.avatarColor),
+                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.85f)),
             contentAlignment = Alignment.Center
         ) {
             Text(
-                text = dialog.title.take(1).uppercase(),
+                text = chat.title.take(1).uppercase(),
                 color = Color.White,
                 fontWeight = FontWeight.Bold,
                 fontSize = 20.sp
             )
-            if (dialog.isOnline) {
-                Box(
-                    modifier = Modifier
-                        .align(Alignment.BottomEnd)
-                        .size(14.dp)
-                        .clip(CircleShape)
-                        .background(Color(0xFF00E676))
-                        .background(Color.White.copy(alpha = 0.2f))
-                )
-            }
         }
 
         Spacer(modifier = Modifier.width(14.dp))
@@ -173,13 +176,13 @@ fun ChatItemRow(dialog: DialogItem, onClick: () -> Unit) {
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = dialog.title,
+                    text = chat.title,
                     style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
                 Text(
-                    text = dialog.time,
+                    text = timeFormatted,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
                 )
@@ -193,14 +196,14 @@ fun ChatItemRow(dialog: DialogItem, onClick: () -> Unit) {
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = dialog.lastMessage,
+                    text = chat.lastMessageText.ifEmpty { "Нет сообщений" },
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f)
                 )
-                if (dialog.unreadCount > 0) {
+                if (chat.unreadCount > 0) {
                     Box(
                         modifier = Modifier
                             .padding(start = 8.dp)
@@ -209,7 +212,7 @@ fun ChatItemRow(dialog: DialogItem, onClick: () -> Unit) {
                             .padding(horizontal = 8.dp, vertical = 2.dp)
                     ) {
                         Text(
-                            text = dialog.unreadCount.toString(),
+                            text = chat.unreadCount.toString(),
                             style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
                             color = Color.White
                         )

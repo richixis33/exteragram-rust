@@ -18,29 +18,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import org.exteragram.rust.core.ExteraBridge
+import org.exteragram.rust.telegram.ExteraChatMessage
+import org.exteragram.rust.telegram.TelegramManager
 import org.exteragram.rust.ui.components.LiquidTopBar
-import org.exteragram.rust.ui.theme.BubbleIncomingDark
-import org.exteragram.rust.ui.theme.BubbleOutgoingDark
 import org.exteragram.rust.ui.theme.liquidGlass
-
-data class ChatMessage(
-    val id: Long,
-    val senderId: Long,
-    val senderName: String,
-    val text: String,
-    val time: String,
-    val isOutgoing: Boolean,
-    val isDeletedByRemote: Boolean = false,
-    val editTime: String? = null
-)
-
-val initialMessages = listOf(
-    ChatMessage(1, 9482810, "Павел Дуров", "Привет! Слышал, вы переписываете клиент на Rust под смартфоны?", "01:10", false),
-    ChatMessage(2, 5500123, "Вы", "Да! Интерфейс на Jetpack Compose с жидким стеклом (Liquid Glass) и Material You, а сетевое ядро на Rust.", "01:12", true),
-    ChatMessage(3, 9482810, "Павел Дуров", "Это секретное сообщение, которое я случайно удалил...", "01:14", false, isDeletedByRemote = true),
-    ChatMessage(4, 9482810, "Павел Дуров", "Rust даст минимальную задержку и безопасность памяти при обработке MTProto.", "01:15", false, editTime = "01:16:42"),
-    ChatMessage(5, 5500123, "Вы", "И Ghost Mode работает на уровне перехвата пакетов в Rust! Сервер даже не знает, что сообщение прочитано.", "01:18", true)
-)
+import java.text.SimpleDateFormat
+import java.util.*
 
 @Composable
 fun ChatScreen(
@@ -50,14 +33,20 @@ fun ChatScreen(
     val chatConfig = ExteraBridge.state.chat
     val glassConfig = ExteraBridge.state.glass
     var inputText by remember { mutableStateOf("") }
-    var messages by remember { mutableStateOf(initialMessages) }
+
+    val allMessages by TelegramManager.chatMessages.collectAsState()
+    val messages = allMessages[chatId] ?: emptyList()
+
+    LaunchedEffect(chatId) {
+        TelegramManager.loadChatHistory(chatId)
+    }
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         topBar = {
             LiquidTopBar(
-                title = if (chatId == 1001L) "Павел Дуров" else "Диалог #$chatId",
-                subtitle = if (chatConfig.showIds) "ID: 9482810 • был(а) недавно" else "был(а) недавно",
+                title = "Диалог #$chatId",
+                subtitle = if (chatConfig.showIds) "ID: $chatId" else "Telegram Чат",
                 navigationIcon = Icons.Default.ArrowBack,
                 onNavigationClick = onBackClick,
                 actions = {
@@ -73,16 +62,36 @@ fun ChatScreen(
                 .fillMaxSize()
                 .padding(padding)
         ) {
-            // Messages List
-            LazyColumn(
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxWidth(),
-                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                items(messages) { msg ->
-                    MessageBubble(msg = msg, cornerRadius = chatConfig.bubbleCornerRadius, showIds = chatConfig.showIds)
+            // Real Messages List
+            if (messages.isEmpty()) {
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "Загрузка сообщений из Telegram...",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                    )
+                }
+            } else {
+                LazyColumn(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth(),
+                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    items(messages) { msg ->
+                        RealMessageBubble(
+                            msg = msg,
+                            cornerRadius = chatConfig.bubbleCornerRadius,
+                            showIds = chatConfig.showIds,
+                            showExactEdit = chatConfig.showExactEditTime
+                        )
+                    }
                 }
             }
 
@@ -109,7 +118,12 @@ fun ChatScreen(
 
                     TextField(
                         value = inputText,
-                        onValueChange = { inputText = it },
+                        onValueChange = {
+                            inputText = it
+                            if (it.isNotEmpty()) {
+                                TelegramManager.sendTyping(chatId)
+                            }
+                        },
                         modifier = Modifier.weight(1f),
                         placeholder = { Text("Сообщение...", color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)) },
                         colors = TextFieldDefaults.colors(
@@ -125,16 +139,7 @@ fun ChatScreen(
                     IconButton(
                         onClick = {
                             if (inputText.isNotBlank()) {
-                                val newMsg = ChatMessage(
-                                    id = System.currentTimeMillis(),
-                                    senderId = 5500123,
-                                    senderName = "Вы",
-                                    text = inputText.trim(),
-                                    time = "Только что",
-                                    isOutgoing = true
-                                )
-                                messages = messages + newMsg
-                                ExteraBridge.recordMessage(chatId, newMsg.id, newMsg.senderId, newMsg.senderName, newMsg.text, true)
+                                TelegramManager.sendMessage(chatId, inputText.trim())
                                 inputText = ""
                             }
                         }
@@ -156,10 +161,11 @@ fun ChatScreen(
 }
 
 @Composable
-fun MessageBubble(
-    msg: ChatMessage,
+fun RealMessageBubble(
+    msg: ExteraChatMessage,
     cornerRadius: Float,
-    showIds: Boolean
+    showIds: Boolean,
+    showExactEdit: Boolean
 ) {
     val bubbleShape = RoundedCornerShape(
         topStart = cornerRadius.dp,
@@ -171,6 +177,11 @@ fun MessageBubble(
     val alignment = if (msg.isOutgoing) Alignment.CenterEnd else Alignment.CenterStart
     val bgColor = if (msg.isOutgoing) MaterialTheme.colorScheme.primary.copy(alpha = 0.85f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.85f)
     val textColor = if (msg.isOutgoing) Color.White else MaterialTheme.colorScheme.onSurface
+
+    val timeFormatted = remember(msg.date) {
+        val sdf = SimpleDateFormat("HH:mm", Locale.getDefault())
+        sdf.format(Date(msg.date * 1000L))
+    }
 
     Box(
         modifier = Modifier.fillMaxWidth(),
@@ -222,16 +233,18 @@ fun MessageBubble(
                     )
                 }
 
-                if (msg.editTime != null) {
+                if (showExactEdit && msg.editDate > 0) {
+                    val editSdf = SimpleDateFormat("HH:mm:ss", Locale.getDefault())
+                    val editFormatted = editSdf.format(Date(msg.editDate * 1000L))
                     Text(
-                        text = "изм. ${msg.editTime} • ",
+                        text = "изм. $editFormatted • ",
                         style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
                         color = textColor.copy(alpha = 0.6f)
                     )
                 }
 
                 Text(
-                    text = msg.time,
+                    text = timeFormatted,
                     style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp),
                     color = textColor.copy(alpha = 0.7f)
                 )

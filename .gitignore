@@ -16,3 +16,4 @@ local.properties
 target/
 app/build/
 release_output/
+app/libs/*.aar

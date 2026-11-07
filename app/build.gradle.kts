@@ -12,8 +12,8 @@ android {
         applicationId = "org.exteragram.rust"
         minSdk = 26
         targetSdk = 34
-        versionCode = 10001
-        versionName = "1.0.0-extera-rust"
+        versionCode = 10002
+        versionName = "1.1.0-extera-tdlib-rust"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
@@ -63,10 +63,16 @@ android {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
+        jniLibs {
+            pickFirsts += "lib/**/libtdjni.so"
+            pickFirsts += "lib/**/libextera_core.so"
+        }
     }
 }
 
 dependencies {
+    implementation(files("libs/tdlib.aar"))
+
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.lifecycle.viewmodel.compose)
